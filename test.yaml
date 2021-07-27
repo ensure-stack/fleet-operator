@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: test
+type: Kubeconfig
+data:
+  kubeconfig: "test1232"
