@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/yaml"
 
 	"github.com/ensure-stack/operator-utils/reconcile"
 
@@ -74,6 +74,13 @@ func (r *RemoteClusterReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("creating remote clients: %w", err)
 	}
+	if remoteClient == nil || remoteDiscoveryClient == nil {
+		// Could not create client
+		return ctrl.Result{
+			// Make sure we re-check periodically
+			RequeueAfter: clusterResyncInterval,
+		}, nil
+	}
 
 	// Check connection.
 	success, err := r.checkRemoteVersion(ctx, rc, remoteDiscoveryClient)
@@ -114,7 +121,7 @@ func (r *RemoteClusterReconciler) syncRemoteObjects(
 
 	for _, remoteObject := range remoteObjectList.Items {
 		if err := r.syncObject(ctx, log, &remoteObject, remoteClient); err != nil {
-			return fmt.Errorf("syncing RemoteObject %s", client.ObjectKeyFromObject(&remoteObject))
+			return fmt.Errorf("syncing RemoteObject %s: %w", client.ObjectKeyFromObject(&remoteObject), err)
 		}
 	}
 
@@ -133,17 +140,18 @@ func (r *RemoteClusterReconciler) syncObject(
 	}
 
 	// handle deletion
-	if controllerutil.ContainsFinalizer(
-		remoteObject, remoteClusterFinalizer) {
+	if !remoteObject.DeletionTimestamp.IsZero() {
 		if err := remoteClient.Delete(ctx, obj); err != nil &&
-			errors.IsNotFound(err) {
-			return fmt.Errorf("deleting RemoteObjectect: %w", err)
+			!errors.IsNotFound(err) {
+			return fmt.Errorf("deleting RemoteObject: %w", err)
 		}
-
-		controllerutil.RemoveFinalizer(
-			remoteObject, remoteClusterFinalizer)
-		if err := r.Update(ctx, remoteObject); err != nil {
-			return fmt.Errorf("removing finalizer: %w", err)
+		if controllerutil.ContainsFinalizer(
+			remoteObject, remoteClusterFinalizer) {
+			controllerutil.RemoveFinalizer(
+				remoteObject, remoteClusterFinalizer)
+			if err := r.Update(ctx, remoteObject); err != nil {
+				return fmt.Errorf("removing finalizer: %w", err)
+			}
 		}
 	}
 
@@ -164,7 +172,7 @@ func (r *RemoteClusterReconciler) syncObject(
 	syncStatus(obj, remoteObject)
 
 	meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
-		Type:    fleetv1alpha1.RemoteClusterReachable,
+		Type:    fleetv1alpha1.RemoteObjectSynced,
 		Status:  metav1.ConditionTrue,
 		Reason:  "ObjectSynced",
 		Message: "Object was synced with the RemoteCluster.",
@@ -252,7 +260,7 @@ func (r *RemoteClusterReconciler) reconcileObject(
 	log logr.Logger,
 ) error {
 	currentObj := obj.DeepCopy()
-	err := r.Get(ctx, client.ObjectKeyFromObject(obj), currentObj)
+	err := remoteClient.Get(ctx, client.ObjectKeyFromObject(obj), currentObj)
 	if err != nil && !errors.IsNotFound(err) {
 		return fmt.Errorf("getting: %w", err)
 	}
@@ -270,7 +278,7 @@ func (r *RemoteClusterReconciler) reconcileObject(
 		log.Info("patching spec", "obj", client.ObjectKeyFromObject(obj))
 		// this is only updating "known" fields,
 		// so annotations/labels and other properties will be preserved.
-		err := r.Patch(
+		err := remoteClient.Patch(
 			ctx, obj, client.MergeFrom(&unstructured.Unstructured{}))
 
 		// Alternative to override the object completely:
@@ -338,6 +346,7 @@ func (r *RemoteClusterReconciler) createRemoteClients(
 	if err := r.Get(ctx, secretKey, kubeconfigSecret); errors.IsNotFound(err) {
 		log.Info("missing kubeconfig secret", "secret", secretKey)
 		r.Recorder.Eventf(rc, corev1.EventTypeWarning, "InvalidConfig", "missing kubeconfig secret %q", secretKey)
+		return nil, nil, nil
 	} else if err != nil {
 		return nil, nil, fmt.Errorf("getting Kubeconfig secret: %w", err)
 	}

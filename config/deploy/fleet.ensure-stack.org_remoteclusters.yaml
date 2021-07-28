@@ -20,7 +20,7 @@ spec:
     - jsonPath: .status.localNamespace
       name: Namespace
       type: string
-    - jsonPath: .status.kubernetesAPIServer
+    - jsonPath: .status.remoteClusterState.apiServer
       name: API Server
       type: string
     - jsonPath: .status.phase

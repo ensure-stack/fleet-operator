@@ -31,10 +31,6 @@ type RemoteObjectSetList struct {
 	Items           []RemoteObjectSet `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&RemoteObjectSet{}, &RemoteObjectSetList{})
-}
-
 // RemoteObjectSetSpec defines the desired state of RemoteObjectSet.
 type RemoteObjectSetSpec struct {
 	// +kubebuilder:validation:EmbeddedResource
@@ -47,4 +43,17 @@ type RemoteObjectSetSpec struct {
 	// Probes
 }
 
-type RemoteObjectSetStatus struct{}
+type RemoteObjectSetStatus struct {
+	// The most recent generation observed by the controller.
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions is a list of status conditions ths object is in.
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// DEPRECATED: This field is not part of any API contract
+	// it will go away as soon as kubectl can print conditions!
+	// Human readable status - please use .Conditions from code
+	Phase RemoteObjectPhase `json:"phase,omitempty"`
+}
+
+func init() {
+	SchemeBuilder.Register(&RemoteObjectSet{}, &RemoteObjectSetList{})
+}

@@ -1,0 +1,29 @@
+apiVersion: fleet.ensure-stack.org/v1alpha1
+kind: RemoteObject
+metadata:
+  name: remote-nginx
+  namespace: cluster-remote-1
+spec:
+  object:
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: nginx-deployment-v1
+      namespace: default
+      labels:
+        app: nginx
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: nginx
+      template:
+        metadata:
+          labels:
+            app: nginx
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:1.14.2
+            ports:
+            - containerPort: 80

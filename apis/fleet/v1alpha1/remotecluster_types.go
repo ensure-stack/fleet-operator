@@ -11,7 +11,7 @@ import (
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.localNamespace"
-// +kubebuilder:printcolumn:name="API Server",type="string",JSONPath=".status.kubernetesAPIServer"
+// +kubebuilder:printcolumn:name="API Server",type="string",JSONPath=".status.remoteClusterState.apiServer"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type RemoteCluster struct {

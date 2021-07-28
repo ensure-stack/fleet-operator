@@ -1,0 +1,8 @@
+apiVersion: fleet.ensure-stack.org/v1alpha1
+kind: RemoteCluster
+metadata:
+  name: remote-1
+spec:
+  kubeconfigSecret:
+    name: remote-1-kubeconfig
+    namespace: default
