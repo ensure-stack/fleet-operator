@@ -37,6 +37,7 @@ type RemoteClusterReconciler struct {
 func (r *RemoteClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&fleetv1alpha1.RemoteCluster{}).
+		Owns(&corev1.Namespace{}).
 		Complete(r)
 }
 
@@ -103,61 +104,101 @@ func (r *RemoteClusterReconciler) syncRemoteObjects(
 		return fmt.Errorf("listing remote objects: %w", err)
 	}
 
-	for _, remoteObj := range remoteObjectList.Items {
-		obj, err := unstructuredFromRaw(remoteObj.Spec.Object)
-		if err != nil {
-			return fmt.Errorf("parsing object: %w", err)
-		}
-
-		// handle deletion
-		if controllerutil.ContainsFinalizer(
-			&remoteObj, remoteClusterFinalizer) {
-			if err := remoteClient.Delete(ctx, obj); err != nil &&
-				errors.IsNotFound(err) {
-				return fmt.Errorf("deleting RemoteObject: %w", err)
-			}
-
-			controllerutil.RemoveFinalizer(
-				&remoteObj, remoteClusterFinalizer)
-			if err := r.Update(ctx, &remoteObj); err != nil {
-				return fmt.Errorf("removing finalizer: %w", err)
-			}
-		}
-
-		// ensure finalizer
-		if !controllerutil.ContainsFinalizer(
-			&remoteObj, remoteClusterFinalizer) {
-			controllerutil.AddFinalizer(&remoteObj, remoteClusterFinalizer)
-			if err := r.Update(ctx, &remoteObj); err != nil {
-				return fmt.Errorf("adding finalizer: %w", err)
-			}
-		}
-
-		if err := r.reconcileObject(ctx, obj, remoteClient, log); err != nil {
-			return fmt.Errorf("reconciling object: %w", err)
-		}
-
-		for _, cond := range conditionsFromUnstructured(obj) {
-			meta.SetStatusCondition(
-				&remoteObj.Status.Conditions, cond)
-		}
-		meta.SetStatusCondition(&remoteObj.Status.Conditions, metav1.Condition{
-			Type:    fleetv1alpha1.RemoteClusterReachable,
-			Status:  metav1.ConditionTrue,
-			Reason:  "ObjectSynced",
-			Message: "Object was synced with the RemoteCluster.",
-		})
-
-		if err := r.Status().Update(ctx, &remoteObj); err != nil {
-			return fmt.Errorf("updating RemoteObject Status: %w", err)
+	for _, remoteObject := range remoteObjectList.Items {
+		if err := r.syncObject(ctx, log, &remoteObject, remoteClient); err != nil {
+			return fmt.Errorf("syncing RemoteObject %s", client.ObjectKeyFromObject(&remoteObject))
 		}
 	}
 
 	return nil
 }
 
-func conditionsFromUnstructured(
-	obj *unstructured.Unstructured) []metav1.Condition {
+func (r *RemoteClusterReconciler) syncObject(
+	ctx context.Context,
+	log logr.Logger,
+	remoteObject *fleetv1alpha1.RemoteObject,
+	remoteClient client.Client,
+) error {
+	obj, err := unstructuredFromRaw(remoteObject.Spec.Object)
+	if err != nil {
+		return fmt.Errorf("parsing object: %w", err)
+	}
+
+	// handle deletion
+	if controllerutil.ContainsFinalizer(
+		remoteObject, remoteClusterFinalizer) {
+		if err := remoteClient.Delete(ctx, obj); err != nil &&
+			errors.IsNotFound(err) {
+			return fmt.Errorf("deleting RemoteObjectect: %w", err)
+		}
+
+		controllerutil.RemoveFinalizer(
+			remoteObject, remoteClusterFinalizer)
+		if err := r.Update(ctx, remoteObject); err != nil {
+			return fmt.Errorf("removing finalizer: %w", err)
+		}
+	}
+
+	// ensure finalizer
+	if !controllerutil.ContainsFinalizer(
+		remoteObject, remoteClusterFinalizer) {
+		controllerutil.AddFinalizer(remoteObject, remoteClusterFinalizer)
+		if err := r.Update(ctx, remoteObject); err != nil {
+			return fmt.Errorf("adding finalizer: %w", err)
+		}
+	}
+
+	if err := r.reconcileObject(ctx, obj, remoteClient, log); err != nil {
+		// TODO: Update RemoteObject status on non-transient errors, preventing sync.
+		return fmt.Errorf("reconciling object: %w", err)
+	}
+
+	syncStatus(obj, remoteObject)
+
+	meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
+		Type:    fleetv1alpha1.RemoteClusterReachable,
+		Status:  metav1.ConditionTrue,
+		Reason:  "ObjectSynced",
+		Message: "Object was synced with the RemoteCluster.",
+	})
+	remoteObject.Status.UpdatePhase()
+	remoteObject.Status.LastHeartbeatTime = metav1.Now()
+	if err := r.Status().Update(ctx, remoteObject); err != nil {
+		return fmt.Errorf("updating RemoteObject Status: %w", err)
+	}
+
+	return nil
+}
+
+// Sync Status from obj to remoteObject checking observedGeneration.
+func syncStatus(obj *unstructured.Unstructured, remoteObject *fleetv1alpha1.RemoteObject) {
+	for _, cond := range conditionsFromUnstructured(obj) {
+		// Update Condition ObservedGeneration to relate to the current Generation of the RemoteObject in the Fleet Cluster,
+		// if the Condition of the object in the RemoteCluster is not stale and such a property exists.
+		if cond.ObservedGeneration != 0 &&
+			cond.ObservedGeneration == obj.GetGeneration() {
+			cond.ObservedGeneration = remoteObject.Generation
+		}
+
+		meta.SetStatusCondition(
+			&remoteObject.Status.Conditions, cond)
+	}
+
+	// Update general ObservedGeneration to relate to the current Generation of the RemoteObject,
+	// if the Status of the object in the RemoteCluster is not stale and such a property exists.
+	observedGeneration, ok, err := unstructured.NestedInt64(obj.Object, "status", "observedGeneration")
+	if !ok || err != nil {
+		// TODO: enhanced error reporting to find miss-typed fields?
+		// observedGeneration field not present or of invalid type -> nothing to do
+		return
+	}
+	if observedGeneration != 0 &&
+		observedGeneration == obj.GetGeneration() {
+		remoteObject.Status.ObservedGeneration = remoteObject.Generation
+	}
+}
+
+func conditionsFromUnstructured(obj *unstructured.Unstructured) []metav1.Condition {
 	var foundConditions []metav1.Condition
 
 	conditions, exist, err := unstructured.
@@ -175,13 +216,9 @@ func conditionsFromUnstructured(
 		}
 
 		// Check conditions observed generation, if set
-		observedGeneration, ok, err := unstructured.NestedInt64(
+		observedGeneration, _, _ := unstructured.NestedInt64(
 			cond, "observedGeneration",
 		)
-		if err == nil && ok && observedGeneration != obj.GetGeneration() {
-			// skip outdated conditions
-			continue
-		}
 
 		condType, _ := cond["type"].(string)
 		condStatus, _ := cond["status"].(string)

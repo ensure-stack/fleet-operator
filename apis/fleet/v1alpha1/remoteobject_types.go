@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
@@ -51,6 +52,16 @@ type RemoteObjectStatus struct {
 	Phase RemoteObjectPhase `json:"phase,omitempty"`
 	// Last time the controller operated on this object.
 	LastHeartbeatTime metav1.Time `json:"lastHeartbeatTime,omitempty"`
+}
+
+// UpdatePhase sets the Phase according to reported conditions.
+func (s *RemoteObjectStatus) UpdatePhase() {
+	if meta.IsStatusConditionTrue(s.Conditions, RemoteObjectSynced) {
+		s.Phase = RemoteObjectPhaseSyncing
+		return
+	}
+
+	s.Phase = RemoteObjectPhasePending
 }
 
 const (
