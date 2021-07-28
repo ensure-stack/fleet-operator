@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v2"
@@ -25,7 +26,10 @@ import (
 	fleetv1alpha1 "github.com/ensure-stack/fleet-operator/apis/fleet/v1alpha1"
 )
 
-const remoteClusterFinalizer = "fleet.ensure-stack.org/cleanup"
+const (
+	remoteClusterFinalizer = "fleet.ensure-stack.org/cleanup"
+	clusterResyncInterval  = 1 * time.Minute
+)
 
 type RemoteClusterReconciler struct {
 	client.Client
@@ -43,7 +47,7 @@ func (r *RemoteClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // RemoteClusterReconciler/Controller entrypoint
 func (r *RemoteClusterReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
 	log := r.Log.WithValues("remote-cluster", req.NamespacedName.String())
 
 	rc := &fleetv1alpha1.RemoteCluster{}
@@ -60,8 +64,7 @@ func (r *RemoteClusterReconciler) Reconcile(
 	if err := controllerutil.SetControllerReference(rc, ns, r.Scheme); err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting controller reference on namespace: %w", err)
 	}
-	_, err := reconcile.Namespace(ctx, log, r.Client, ns)
-	if err != nil {
+	if _, err := reconcile.Namespace(ctx, log, r.Client, ns); err != nil {
 		return ctrl.Result{}, fmt.Errorf("reconciling Cluster Namespace: %w", err)
 	}
 	rc.Status.LocalNamespace = ns.Name
@@ -78,7 +81,10 @@ func (r *RemoteClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("could not check RemoteCluster version: %w", err)
 	}
 	if !success {
-		return ctrl.Result{}, nil
+		return ctrl.Result{
+			// Make sure we re-check periodically
+			RequeueAfter: clusterResyncInterval,
+		}, nil
 	}
 
 	// Sync RemoteObjects.
@@ -86,8 +92,10 @@ func (r *RemoteClusterReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("syncing RemoteObjects: %w", err)
 	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{
+		// Make sure we re-check periodically
+		RequeueAfter: clusterResyncInterval,
+	}, nil
 }
 
 func (r *RemoteClusterReconciler) syncRemoteObjects(
