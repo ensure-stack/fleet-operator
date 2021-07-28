@@ -49,6 +49,7 @@ spec:
             description: RemoteObjectSpec defines the desired state of RemoteObject.
             properties:
               availabilityProbe:
+                description: Configures how availability of the RemoteObject is determined.
                 properties:
                   condition:
                     description: Condition specific configuration parameters. Only present if Type = Condition.

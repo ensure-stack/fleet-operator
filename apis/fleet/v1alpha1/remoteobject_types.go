@@ -36,7 +36,7 @@ type RemoteObjectSpec struct {
 	// +kubebuilder:validation:EmbeddedResource
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Object *runtime.RawExtension `json:"object"`
-
+	// Configures how availability of the RemoteObject is determined.
 	AvailabilityProbe RemoteObjectProbe `json:"availabilityProbe"`
 }
 
@@ -75,9 +75,15 @@ type RemoteObjectStatus struct {
 
 // UpdatePhase sets the Phase according to reported conditions.
 func (s *RemoteObjectStatus) UpdatePhase() {
-	if meta.IsStatusConditionTrue(s.Conditions, RemoteObjectSynced) {
-		s.Phase = RemoteObjectPhaseSyncing
-		return
+	if availableCond := meta.FindStatusCondition(s.Conditions, RemoteObjectAvailable); availableCond != nil {
+		switch availableCond.Status {
+		case metav1.ConditionTrue:
+			s.Phase = RemoteObjectPhaseAvailable
+			return
+		case metav1.ConditionFalse:
+			s.Phase = RemoteObjectPhaseUnavailable
+			return
+		}
 	}
 
 	s.Phase = RemoteObjectPhasePending
@@ -88,7 +94,7 @@ const (
 	// True when the object was successfully synced to the remote cluster.
 	// Might transition to False when subsequent updates fail to update the remote object or pull new status.
 	RemoteObjectSynced = "fleet.ensure-stack.org/Synced"
-	// Object is considered available, based on
+	// Object is considered available, based on the configured Availabilty Probe.
 	RemoteObjectAvailable = "fleet.ensure-stack.org/Available"
 )
 
@@ -97,8 +103,12 @@ type RemoteObjectPhase string
 // Well-known RemoteObject Phases for printing a Status in kubectl,
 // see deprecation notice in RemoteObjectStatus for details.
 const (
+	// A RemoteObject is considered Pending until it was pushed to a RemoteCluster and it's availabilty was determined.
 	RemoteObjectPhasePending RemoteObjectPhase = "Pending"
-	RemoteObjectPhaseSyncing RemoteObjectPhase = "Syncing"
+	// RemoteObjects are Available when passing their availabilityProbe.
+	RemoteObjectPhaseAvailable RemoteObjectPhase = "Available"
+	// RemoteObjects are Unavailable when failing their availabilityProbe.
+	RemoteObjectPhaseUnavailable RemoteObjectPhase = "Unavailable"
 )
 
 func init() {
