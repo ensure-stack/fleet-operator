@@ -37,9 +37,28 @@ type RemoteObjectSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Object *runtime.RawExtension `json:"object"`
 
-	// TODO: Probes?
-	// Or other condition mapping mechanism?
+	AvailabilityProbe RemoteObjectProbe `json:"availabilityProbe"`
 }
+
+type RemoteObjectProbe struct {
+	// Type of the probe.
+	// +kubebuilder:validation:Enum=Condition
+	Type RemoteObjectProbeType `json:"type"`
+	// Condition specific configuration parameters.
+	// Only present if Type = Condition.
+	Condition *RemoteObjectProbeConditionSpec `json:"condition"`
+}
+
+type RemoteObjectProbeConditionSpec struct {
+	// Condition Type to check.
+	Type string `json:"type"`
+}
+
+type RemoteObjectProbeType string
+
+const (
+	RemoteObjectProbeCondition RemoteObjectProbeType = "Condition"
+)
 
 type RemoteObjectStatus struct {
 	// The most recent generation observed by the controller.
@@ -69,6 +88,8 @@ const (
 	// True when the object was successfully synced to the remote cluster.
 	// Might transition to False when subsequent updates fail to update the remote object or pull new status.
 	RemoteObjectSynced = "fleet.ensure-stack.org/Synced"
+	// Object is considered available, based on
+	RemoteObjectAvailable = "fleet.ensure-stack.org/Available"
 )
 
 type RemoteObjectPhase string

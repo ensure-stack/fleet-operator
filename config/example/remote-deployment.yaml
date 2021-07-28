@@ -4,6 +4,10 @@ metadata:
   name: remote-nginx
   namespace: cluster-remote-1
 spec:
+  availabilityProbe:
+    type: Condition
+    condition:
+      type: Available
   object:
     apiVersion: apps/v1
     kind: Deployment

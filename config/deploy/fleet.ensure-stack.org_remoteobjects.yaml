@@ -48,11 +48,32 @@ spec:
           spec:
             description: RemoteObjectSpec defines the desired state of RemoteObject.
             properties:
+              availabilityProbe:
+                properties:
+                  condition:
+                    description: Condition specific configuration parameters. Only present if Type = Condition.
+                    properties:
+                      type:
+                        description: Condition Type to check.
+                        type: string
+                    required:
+                    - type
+                    type: object
+                  type:
+                    description: Type of the probe.
+                    enum:
+                    - Condition
+                    type: string
+                required:
+                - condition
+                - type
+                type: object
               object:
                 type: object
                 x-kubernetes-embedded-resource: true
                 x-kubernetes-preserve-unknown-fields: true
             required:
+            - availabilityProbe
             - object
             type: object
           status:

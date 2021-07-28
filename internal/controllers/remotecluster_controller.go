@@ -170,6 +170,7 @@ func (r *RemoteClusterReconciler) syncObject(
 	}
 
 	syncStatus(obj, remoteObject)
+	setAvailableCondition(remoteObject)
 
 	meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
 		Type:    fleetv1alpha1.RemoteObjectSynced,
@@ -186,8 +187,51 @@ func (r *RemoteClusterReconciler) syncObject(
 	return nil
 }
 
+func setAvailableCondition(remoteObject *fleetv1alpha1.RemoteObject) {
+	switch remoteObject.Spec.AvailabilityProbe.Type {
+	case fleetv1alpha1.RemoteObjectProbeCondition:
+		if remoteObject.Spec.AvailabilityProbe.Condition == nil {
+			return
+		}
+
+		cond := meta.FindStatusCondition(
+			remoteObject.Status.Conditions,
+			remoteObject.Spec.AvailabilityProbe.Condition.Type,
+		)
+
+		if cond == nil {
+			meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
+				Type:   fleetv1alpha1.RemoteObjectAvailable,
+				Status: metav1.ConditionUnknown,
+				Reason: "MissingCondition",
+				Message: fmt.Sprintf("Missing %s condition.",
+					remoteObject.Spec.AvailabilityProbe.Condition.Type),
+			})
+		} else if cond.Status == metav1.ConditionTrue {
+			meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
+				Type:   fleetv1alpha1.RemoteObjectAvailable,
+				Status: metav1.ConditionTrue,
+				Reason: "ProbeSuccess",
+				Message: fmt.Sprintf("Probed condition %s is True.",
+					remoteObject.Spec.AvailabilityProbe.Condition.Type),
+			})
+		} else if cond.Status == metav1.ConditionFalse {
+			meta.SetStatusCondition(&remoteObject.Status.Conditions, metav1.Condition{
+				Type:   fleetv1alpha1.RemoteObjectAvailable,
+				Status: metav1.ConditionFalse,
+				Reason: "ProbeFailure",
+				Message: fmt.Sprintf("Probed condition %s is False.",
+					remoteObject.Spec.AvailabilityProbe.Condition.Type),
+			})
+		}
+	}
+}
+
 // Sync Status from obj to remoteObject checking observedGeneration.
-func syncStatus(obj *unstructured.Unstructured, remoteObject *fleetv1alpha1.RemoteObject) {
+func syncStatus(
+	obj *unstructured.Unstructured,
+	remoteObject *fleetv1alpha1.RemoteObject,
+) {
 	for _, cond := range conditionsFromUnstructured(obj) {
 		// Update Condition ObservedGeneration to relate to the current Generation of the RemoteObject in the Fleet Cluster,
 		// if the Condition of the object in the RemoteCluster is not stale and such a property exists.
