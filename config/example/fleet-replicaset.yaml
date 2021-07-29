@@ -1,0 +1,38 @@
+apiVersion: fleet.ensure-stack.org/v1alpha1
+kind: FleetReplicaSet
+metadata:
+  name: nginx-everywhere
+spec:
+  remoteClusterSelector: {}
+  template:
+    metadata:
+      name: nginx-2
+    spec:
+      priorityClassName: default
+      availabilityProbe:
+        type: Condition
+        condition:
+          type: Available
+      object:
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: nginx-deployment-v2
+          namespace: default
+          labels:
+            app: nginx
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: nginx
+          template:
+            metadata:
+              labels:
+                app: nginx
+            spec:
+              containers:
+              - name: nginx
+                image: nginx:1.14.2
+                ports:
+                - containerPort: 80

@@ -2,7 +2,7 @@ SHELL=/bin/bash
 .SHELLFLAGS=-euo pipefail -c
 
 # Dependency Versions
-CONTROLLER_GEN_VERSION:=v0.5.0
+CONTROLLER_GEN_VERSION:=v0.6.2
 KIND_VERSION:=v0.10.0
 YQ_VERSION:=v4@v4.7.0
 GOIMPORTS_VERSION:=v0.1.0
@@ -147,7 +147,7 @@ $(GOLANGCI_LINT):
 ## Generate deepcopy code and kubernetes manifests.
 generate: $(CONTROLLER_GEN)
 	@echo "generating kubernetes manifests..."
-	@controller-gen crd:crdVersions=v1 \
+	@controller-gen crd:crdVersions=v1,generateEmbeddedObjectMeta=true \
 		rbac:roleName=fleet-operator-manager \
 		paths="./..." \
 		output:crd:artifacts:config=config/deploy 2>&1 | sed 's/^/  /'
