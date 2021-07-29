@@ -92,13 +92,27 @@ func main() {
 		}
 	}
 
+	c := controllers.NewClientCache()
+
 	if err = (&controllers.RemoteClusterReconciler{
-		Client:   mgr.GetClient(),
-		Log:      ctrl.Log.WithName("controllers").WithName("Handover"),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("handover"),
+		Client:      mgr.GetClient(),
+		Log:         ctrl.Log.WithName("controllers").WithName("RemoteCluster"),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorderFor("remotecluster"),
+		ClientCache: c,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Handover")
+		setupLog.Error(err, "unable to create controller", "controller", "RemoteCluster")
+		os.Exit(1)
+	}
+
+	if err = (&controllers.RemoteObjectReconciler{
+		Client:      mgr.GetClient(),
+		Log:         ctrl.Log.WithName("controllers").WithName("RemoteObject"),
+		Scheme:      mgr.GetScheme(),
+		Recorder:    mgr.GetEventRecorderFor("remoteobject"),
+		ClientCache: c,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RemoteObject")
 		os.Exit(1)
 	}
 
