@@ -56,6 +56,25 @@ func (r *RemoteClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Handle Deletion
+	if !rc.DeletionTimestamp.IsZero() {
+		r.ClientCache.Free(rc.Status.LocalNamespace)
+
+		controllerutil.RemoveFinalizer(rc, remoteClusterFinalizer)
+		if err := r.Update(ctx, rc); err != nil {
+			return ctrl.Result{}, fmt.Errorf("removing finalizer to RemoteCluster: %w", err)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add Finalizer to cleanup cached clients
+	if !controllerutil.ContainsFinalizer(rc, remoteClusterFinalizer) {
+		controllerutil.AddFinalizer(rc, remoteClusterFinalizer)
+		if err := r.Update(ctx, rc); err != nil {
+			return ctrl.Result{}, fmt.Errorf("adding finalizer to RemoteCluster: %w", err)
+		}
+	}
+
 	// Reconcile a Namespace for the Cluster to contain Remote Objects for it.
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
