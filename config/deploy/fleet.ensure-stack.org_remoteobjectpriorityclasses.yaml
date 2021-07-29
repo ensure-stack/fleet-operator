@@ -17,17 +17,8 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.object.metadata.name
-      name: Remote Name
-      type: string
-    - jsonPath: .spec.object.metadata.namespace
-      name: Remote Namespace
-      type: string
-    - jsonPath: .spec.object.kind
-      name: Kind
-      type: string
-    - jsonPath: .status.phase
-      name: Status
+    - jsonPath: .resyncInterval
+      name: Resync Interval
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age

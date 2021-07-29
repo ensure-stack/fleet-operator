@@ -8,10 +8,7 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Remote Name",type="string",JSONPath=".spec.object.metadata.name"
-// +kubebuilder:printcolumn:name="Remote Namespace",type="string",JSONPath=".spec.object.metadata.namespace"
-// +kubebuilder:printcolumn:name="Kind",type="string",JSONPath=".spec.object.kind"
-// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.phase"
+// +kubebuilder:printcolumn:name="Resync Interval",type="string",JSONPath=".resyncInterval"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type RemoteObjectPriorityClass struct {
 	metav1.TypeMeta   `json:",inline"`
