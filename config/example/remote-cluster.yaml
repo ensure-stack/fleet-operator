@@ -6,3 +6,4 @@ spec:
   kubeconfigSecret:
     name: remote-1-kubeconfig
     namespace: default
+  resyncInterval: 1m

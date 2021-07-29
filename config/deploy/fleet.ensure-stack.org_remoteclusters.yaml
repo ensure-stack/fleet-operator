@@ -58,8 +58,13 @@ spec:
                     description: Namespace defines the space within which the secret name must be unique.
                     type: string
                 type: object
+              resyncInterval:
+                default: 5m
+                description: Remote cluster resync interval.
+                type: string
             required:
             - kubeconfigSecret
+            - resyncInterval
             type: object
           status:
             default:

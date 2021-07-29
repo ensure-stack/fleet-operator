@@ -38,6 +38,9 @@ type RemoteObjectSpec struct {
 	Object *runtime.RawExtension `json:"object"`
 	// Configures how availability of the RemoteObject is determined.
 	AvailabilityProbe RemoteObjectProbe `json:"availabilityProbe"`
+	// Priority Class name.
+	// RemoteObjectPriorityClasses need to be defined beforehand.
+	PriorityClassName string `json:"priorityClassName,omitempty"`
 }
 
 type RemoteObjectProbe struct {

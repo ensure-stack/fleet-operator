@@ -36,6 +36,9 @@ type RemoteClusterList struct {
 type RemoteClusterSpec struct {
 	// Secret pointing to a kubeconfig to connect to a remote cluster.
 	KubeconfigSecret corev1.SecretReference `json:"kubeconfigSecret"`
+	// Remote cluster resync interval.
+	// +kubebuilder:default="5m"
+	ResyncInterval metav1.Duration `json:"resyncInterval"`
 }
 
 type RemoteClusterStatus struct {
