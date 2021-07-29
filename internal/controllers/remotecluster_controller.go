@@ -17,8 +17,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/yaml"
 
 	"github.com/ensure-stack/operator-utils/reconcile"
@@ -40,7 +42,7 @@ type RemoteClusterReconciler struct {
 
 func (r *RemoteClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&fleetv1alpha1.RemoteCluster{}).
+		For(&fleetv1alpha1.RemoteCluster{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&corev1.Namespace{}).
 		Complete(r)
 }
@@ -114,7 +116,7 @@ func (r *RemoteClusterReconciler) syncRemoteObjects(
 	remoteObjectList := &fleetv1alpha1.RemoteObjectList{}
 	if err := r.List(
 		ctx, remoteObjectList,
-		client.InNamespace(rc.Namespace),
+		client.InNamespace(rc.Status.LocalNamespace),
 	); err != nil {
 		return fmt.Errorf("listing remote objects: %w", err)
 	}
