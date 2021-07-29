@@ -119,6 +119,7 @@ func (r *RemoteObjectReconciler) syncObject(
 				return fmt.Errorf("removing finalizer: %w", err)
 			}
 		}
+		return nil
 	}
 
 	// ensure finalizer

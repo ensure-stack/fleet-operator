@@ -29,6 +29,8 @@ type FleetReplicaSetList struct {
 type FleetReplicaSetSpec struct {
 	// RemoteCluster selector targets the clusters this object should be rolled out to.
 	RemoteClusterSelector metav1.LabelSelector `json:"remoteClusterSelector"`
+	// Selector selects the RemoteObjects that this FleetReplicaSet should manage.
+	Selector metav1.LabelSelector `json:"selector"`
 	// Template of the RemoteObject to create.
 	Template RemoteObjectTemplate `json:"template"`
 }

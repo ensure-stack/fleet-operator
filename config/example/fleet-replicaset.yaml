@@ -3,10 +3,15 @@ kind: FleetReplicaSet
 metadata:
   name: nginx-everywhere
 spec:
-  remoteClusterSelector: {}
+  remoteClusterSelector: {} # all clusters
+  selector:
+    matchLabels:
+      fleet-replica-set: nginx-everywhere
   template:
     metadata:
       name: nginx-2
+      labels:
+        fleet-replica-set: nginx-everywhere
     spec:
       priorityClassName: default
       availabilityProbe:

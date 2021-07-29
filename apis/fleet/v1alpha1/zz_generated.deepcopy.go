@@ -72,6 +72,7 @@ func (in *FleetReplicaSetList) DeepCopyObject() runtime.Object {
 func (in *FleetReplicaSetSpec) DeepCopyInto(out *FleetReplicaSetSpec) {
 	*out = *in
 	in.RemoteClusterSelector.DeepCopyInto(&out.RemoteClusterSelector)
+	in.Selector.DeepCopyInto(&out.Selector)
 	in.Template.DeepCopyInto(&out.Template)
 }
 

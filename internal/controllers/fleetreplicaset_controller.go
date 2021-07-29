@@ -2,20 +2,16 @@ package controllers
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
-	"hash"
-	"hash/fnv"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -28,8 +24,6 @@ import (
 
 	fleetv1alpha1 "github.com/ensure-stack/fleet-operator/apis/fleet/v1alpha1"
 )
-
-const fleetReplicaSetLabel = "fleet.ensure-stack.org/fleet-replica-set"
 
 type FleetReplicaSetReconciler struct {
 	client.Client
@@ -61,7 +55,7 @@ func (r *FleetReplicaSetReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	selector, err := metav1.LabelSelectorAsSelector(&fleetReplicaSet.Spec.RemoteClusterSelector)
+	remoteClusterSelector, err := metav1.LabelSelectorAsSelector(&fleetReplicaSet.Spec.RemoteClusterSelector)
 	if err != nil {
 		r.Recorder.Eventf(
 			fleetReplicaSet, corev1.EventTypeWarning, "InvalidConfig",
@@ -69,9 +63,17 @@ func (r *FleetReplicaSetReconciler) Reconcile(
 		return ctrl.Result{}, nil
 	}
 
+	remoteObjectSelector, err := metav1.LabelSelectorAsSelector(&fleetReplicaSet.Spec.Selector)
+	if err != nil {
+		r.Recorder.Eventf(
+			fleetReplicaSet, corev1.EventTypeWarning, "InvalidConfig",
+			"invalid selector: %w", err)
+		return ctrl.Result{}, nil
+	}
+
 	remoteClusterList := &fleetv1alpha1.RemoteClusterList{}
 	if err := r.List(ctx, remoteClusterList, client.MatchingLabelsSelector{
-		Selector: selector,
+		Selector: remoteClusterSelector,
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("listing RemoteClusters: %w", err)
 	}
@@ -79,7 +81,7 @@ func (r *FleetReplicaSetReconciler) Reconcile(
 	// Reconcile Known Objects
 	knownObjects := map[client.ObjectKey]struct{}{}
 	for _, remoteCluster := range remoteClusterList.Items {
-		remoteObject, err := r.reconcileRemoteObject(ctx, &remoteCluster, fleetReplicaSet)
+		remoteObject, err := r.reconcileRemoteObject(ctx, &remoteCluster, fleetReplicaSet, remoteObjectSelector)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("reconciling RemoteObject: %w", err)
 		}
@@ -88,8 +90,8 @@ func (r *FleetReplicaSetReconciler) Reconcile(
 
 	// Check all objects matching our selector
 	remoteObjectList := &fleetv1alpha1.RemoteObjectList{}
-	if err := r.List(ctx, remoteObjectList, client.MatchingLabels{
-		fleetReplicaSetLabel: fleetReplicaSet.Name,
+	if err := r.List(ctx, remoteObjectList, client.MatchingLabelsSelector{
+		Selector: remoteObjectSelector,
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("listing RemoteObjects: %w", err)
 	}
@@ -114,23 +116,15 @@ func (r *FleetReplicaSetReconciler) Reconcile(
 
 func (r *FleetReplicaSetReconciler) reconcileRemoteObject(
 	ctx context.Context, remoteCluster *fleetv1alpha1.RemoteCluster,
-	fleetReplicaSet *fleetv1alpha1.FleetReplicaSet,
+	fleetReplicaSet *fleetv1alpha1.FleetReplicaSet, selector labels.Selector,
 ) (actualRemoteObject *fleetv1alpha1.RemoteObject, err error) {
 	template := fleetReplicaSet.Spec.Template
-
-	var labels map[string]string
-	if template.Metadata.Labels != nil {
-		labels = template.Metadata.Labels
-	} else {
-		labels = map[string]string{}
-	}
-	labels[fleetReplicaSetLabel] = fleetReplicaSet.Name
 
 	remoteObject := &fleetv1alpha1.RemoteObject{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        template.Metadata.Name,
 			Namespace:   remoteCluster.Status.LocalNamespace,
-			Labels:      labels,
+			Labels:      template.Metadata.Labels,
 			Annotations: template.Metadata.Annotations,
 		},
 		Spec: fleetv1alpha1.RemoteObjectSpec{
@@ -144,11 +138,24 @@ func (r *FleetReplicaSetReconciler) reconcileRemoteObject(
 	}
 
 	actualRemoteObject = &fleetv1alpha1.RemoteObject{}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(remoteObject), actualRemoteObject); err != nil && !errors.IsNotFound(err) {
+	err = r.Get(ctx, client.ObjectKeyFromObject(remoteObject), actualRemoteObject)
+	if err != nil && !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("getting RemoteObject: %w", err)
-	} else if errors.IsNotFound(err) {
+	}
+
+	// Don't create/recreate objects we are not selecting
+	if !selector.Matches(labels.Set(remoteObject.Labels)) {
+		return remoteObject, nil
+	}
+
+	if errors.IsNotFound(err) {
 		// Create Object
 		return remoteObject, r.Create(ctx, remoteObject)
+	}
+
+	// Don't update objects we are not selecting
+	if !selector.Matches(labels.Set(actualRemoteObject.Labels)) {
+		return actualRemoteObject, nil
 	}
 
 	if !equality.Semantic.DeepDerivative(remoteObject, actualRemoteObject) {
@@ -174,36 +181,4 @@ func (r *FleetReplicaSetReconciler) requeueAllFleetReplicaSets(obj client.Object
 		})
 	}
 	return
-}
-
-// computeHash returns a hash value calculated from RemoteObject template and
-// a collisionCount to avoid hash collision. The hash will be safe encoded to
-// avoid bad words.
-func computeHash(template *fleetv1alpha1.RemoteObjectTemplate, collisionCount *int32) string {
-	hasher := fnv.New32a()
-	deepHashObject(hasher, *template)
-
-	// Add collisionCount in the hash if it exists.
-	if collisionCount != nil {
-		collisionCountBytes := make([]byte, 8)
-		binary.LittleEndian.PutUint32(
-			collisionCountBytes, uint32(*collisionCount))
-		hasher.Write(collisionCountBytes)
-	}
-
-	return rand.SafeEncodeString(fmt.Sprint(hasher.Sum32()))
-}
-
-// deepHashObject writes specified object to hash using the spew library
-// which follows pointers and prints actual values of the nested objects
-// ensuring the hash does not change when a pointer changes.
-func deepHashObject(hasher hash.Hash, objectToWrite interface{}) {
-	hasher.Reset()
-	printer := spew.ConfigState{
-		Indent:         " ",
-		SortKeys:       true,
-		DisableMethods: true,
-		SpewKeys:       true,
-	}
-	printer.Fprintf(hasher, "%#v", objectToWrite)
 }
