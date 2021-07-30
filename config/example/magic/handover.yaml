@@ -1,0 +1,22 @@
+apiVersion: coordination.thetechnick.ninja/v1alpha1
+kind: ClusterHandover
+metadata:
+  name: fleet-nginx-v1-v2
+spec:
+  strategy:
+    type: Relabel
+    relabel:
+      labelKey: fleet-replica-set
+      fromValue: nginx-everywhere-v1
+      toValue: nginx-everywhere-v2
+      statusPath: .metadata.ownerReferences[0].name
+      maxUnavailable: 1
+  targetAPI:
+    group: fleet.ensure-stack.org
+    kind: RemoteObject
+    version: v1alpha1
+  probes: # check for availability of stufff
+  - type: Condition
+    condition:
+      type: fleet.ensure-stack.org/Available
+      status: "True"

@@ -158,8 +158,14 @@ func (r *FleetReplicaSetReconciler) reconcileRemoteObject(
 		return actualRemoteObject, nil
 	}
 
-	if !equality.Semantic.DeepDerivative(remoteObject, actualRemoteObject) {
+	if !equality.Semantic.DeepDerivative(remoteObject, actualRemoteObject) ||
+		!isOwner(fleetReplicaSet, actualRemoteObject) {
 		actualRemoteObject.Spec = remoteObject.Spec
+		actualRemoteObject.OwnerReferences = nil
+		if err := controllerutil.SetControllerReference(fleetReplicaSet, actualRemoteObject, r.Scheme); err != nil {
+			return nil, fmt.Errorf("setting controller reference: %w", err)
+		}
+
 		return actualRemoteObject, r.Update(ctx, actualRemoteObject)
 	}
 	return actualRemoteObject, nil
@@ -181,4 +187,13 @@ func (r *FleetReplicaSetReconciler) requeueAllFleetReplicaSets(obj client.Object
 		})
 	}
 	return
+}
+
+func isOwner(owner, object client.Object) bool {
+	for _, ownerRef := range object.GetOwnerReferences() {
+		if ownerRef.UID == owner.GetUID() {
+			return true
+		}
+	}
+	return false
 }
